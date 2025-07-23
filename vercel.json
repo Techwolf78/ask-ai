@@ -1,7 +1,0 @@
-{
-  "functions": {
-    "api/ask-ai.js": {
-      "runtime": "edge"
-    }
-  }
-}
