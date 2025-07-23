@@ -1,32 +1,36 @@
-// ask-ai-api/api/ask-ai.js
-
 import { OpenAI } from 'openai';
+import dotenv from 'dotenv';
+
+dotenv.config(); // Load .env in Vercel environment
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
 export default async function handler(req, res) {
+  console.log("Incoming request:", req.method, req.body); // Debug log
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { prompt } = req.body;
-
-  if (!prompt) {
-    return res.status(400).json({ error: 'Missing prompt' });
-  }
-
   try {
+    const { prompt } = req.body;
+    if (!prompt) throw new Error("Prompt is required");
+
     const chatCompletion = await openai.chat.completions.create({
-      model: 'gpt-4',
+      model: 'gpt-3.5-turbo',
       messages: [{ role: 'user', content: prompt }],
     });
 
     const reply = chatCompletion.choices[0].message.content;
-    res.status(200).json({ response: reply });
+    return res.status(200).json({ response: reply });
+
   } catch (err) {
-    console.error('OpenAI error:', err);
-    res.status(500).json({ error: 'Something went wrong' });
+    console.error("API Error:", err);
+    return res.status(500).json({ 
+      error: err.message || 'Server error',
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 }

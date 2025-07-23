@@ -12,6 +12,7 @@
   "type": "commonjs",
   "dependencies": {
     "@vercel/node": "^5.3.6",
+    "dotenv": "^17.2.0",
     "openai": "^5.10.2"
   }
 }
