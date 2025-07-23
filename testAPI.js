@@ -1,14 +1,14 @@
 require('dotenv').config();
-const { OpenAI } = require('openai');
+const Together = require('together-ai');
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+const together = new Together({
+  apiKey: process.env.TOGETHER_API_KEY,
 });
 
 async function testAPI() {
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+    const response = await together.chat.completions.create({
+      model: "Qwen/Qwen3-235B-A22B-Instruct-2507-tput",
       messages: [{ role: "user", content: "Say hello in Spanish" }],
     });
     console.log("Response:", response.choices[0].message.content);

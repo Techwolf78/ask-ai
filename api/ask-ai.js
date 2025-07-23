@@ -1,33 +1,32 @@
-import { OpenAI } from 'openai';
-import dotenv from 'dotenv';
+// api/ask-ai.js
 
-dotenv.config(); // Load .env in Vercel environment
+import Together from 'together-ai';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+const together = new Together({
+  apiKey: process.env.TOGETHER_API_KEY,
 });
 
 export default async function handler(req, res) {
-  console.log("Incoming request:", req.method, req.body); // Debug log
-
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
     const { prompt } = req.body;
-    if (!prompt) throw new Error("Prompt is required");
+    if (!prompt) {
+      return res.status(400).json({ error: 'Missing prompt' });
+    }
 
-    const chatCompletion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+    const response = await together.chat.completions.create({
+      model: "Qwen/Qwen3-235B-A22B-Instruct-2507-tput", // Or any Together model you prefer
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const reply = chatCompletion.choices[0].message.content;
+    const reply = response.choices[0].message.content;
     return res.status(200).json({ response: reply });
 
   } catch (err) {
-    console.error("API Error:", err);
+    console.error("Together API Error:", err);
     return res.status(500).json({ 
       error: err.message || 'Server error',
       stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
