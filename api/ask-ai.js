@@ -1,35 +1,45 @@
-// api/ask-ai.js
+import { OpenAI } from 'openai';
 
-import Together from 'together-ai';
-
-const together = new Together({
-  apiKey: process.env.TOGETHER_API_KEY,
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
 });
 
+// Add your custom responses here
+const CUSTOM_ANSWERS = {
+  account: "For account help, email support@yourdomain.com or visit /account-help",
+  pricing: "See plans at /pricing",
+  // Add more as needed
+};
+
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST' });
+  
+  const { prompt } = req.body;
+  const lowerPrompt = prompt.toLowerCase();
+
+  // Check custom responses first
+  for (const [keyword, response] of Object.entries(CUSTOM_ANSWERS)) {
+    if (lowerPrompt.includes(keyword)) {
+      return res.status(200).json({ 
+        response,
+        is_custom: true 
+      });
+    }
   }
 
+  // Default AI response
   try {
-    const { prompt } = req.body;
-    if (!prompt) {
-      return res.status(400).json({ error: 'Missing prompt' });
-    }
-
-    const response = await together.chat.completions.create({
-      model: "Qwen/Qwen3-235B-A22B-Instruct-2507-tput", // Or any Together model you prefer
-      messages: [{ role: 'user', content: prompt }],
+    const completion = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [{ role: "user", content: prompt }]
     });
-
-    const reply = response.choices[0].message.content;
-    return res.status(200).json({ response: reply });
-
-  } catch (err) {
-    console.error("Together API Error:", err);
-    return res.status(500).json({ 
-      error: err.message || 'Server error',
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    
+    return res.status(200).json({
+      response: completion.choices[0].message.content,
+      is_custom: false
     });
+    
+  } catch (error) {
+    return res.status(500).json({ error: "AI service error" });
   }
 }
