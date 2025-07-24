@@ -36,7 +36,7 @@ If you don't have recent information about something, mention your knowledge cut
 User question: ${prompt}`;
 
     const response = await groq.chat.completions.create({
-      model: "llama-3.1-70b-versatile", // Most powerful free model
+      model: "llama3-70b-8192", // Updated supported Groq model
       messages: [{ role: 'user', content: enhancedPrompt }],
       max_tokens: 1000,
       temperature: 0.7,
