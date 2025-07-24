@@ -1,7 +1,6 @@
 import Groq from "groq-sdk";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import googlethis from "googlethis";
 
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
@@ -9,35 +8,50 @@ const groq = new Groq({
 
 const MODEL = "llama3-8b-8192"; // Using same model as your friend's Python code
 
-// Fetch top URL from Google search (same logic as Python version)
+// Direct Google search scraping (like Python's googlesearch)
 async function fetchTopUrl(query) {
   try {
     console.log(`🔍 Searching Google for: "${query}"`);
     
-    const options = {
-      page: 0,
-      safe: false,
-      parse_ads: false,
-      additional_params: {
-        hl: 'en'
+    // Use Google search URL directly (like your friend's Python googlesearch)
+    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=10`;
+    
+    const response = await fetch(searchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
       }
-    };
+    });
     
-    const response = await googlethis.search(query, options);
-    console.log("📊 Raw search response:", JSON.stringify(response, null, 2));
-    
-    const results = response.results || [];
-    console.log(`📊 Found ${results.length} search results`);
-    
-    if (results.length === 0) {
-      console.log("❌ No search results - trying fallback method");
+    if (!response.ok) {
+      console.log("❌ Google search failed, trying fallback");
       return await fallbackSearch(query);
     }
     
-    // Log all found URLs for debugging
-    results.forEach((result, index) => {
-      console.log(`Result ${index + 1}: ${result.url || 'No URL'} - ${result.title || 'No title'}`);
+    const html = await response.text();
+    const $ = cheerio.load(html);
+    
+    // Extract search results from Google (similar to Python approach)
+    const results = [];
+    
+    // Google search result selectors
+    $('div.g a[href^="http"]').each((i, elem) => {
+      if (i < 10) { // Get top 10 results
+        const url = $(elem).attr('href');
+        const title = $(elem).text() || 'No title';
+        
+        if (url && !url.includes('google.com') && !url.includes('youtube.com')) {
+          results.push({ url, title });
+          console.log(`Google Result ${i + 1}: ${url} - ${title}`);
+        }
+      }
     });
+    
+    console.log(`📊 Found ${results.length} Google search results`);
+    
+    if (results.length === 0) {
+      console.log("❌ No Google results - trying fallback method");
+      return await fallbackSearch(query);
+    }
     
     // Priority domains (same as Python version)
     const priorityDomains = ["shiksha.com", "careers360.com", ".ac.in", ".edu.in", ".org", ".in", ".com"];
@@ -53,14 +67,14 @@ async function fetchTopUrl(query) {
     // If no priority domain found, return first valid result
     const firstResult = results[0]?.url;
     if (firstResult) {
-      console.log(`📝 Using first result: ${firstResult}`);
+      console.log(`📝 Using first Google result: ${firstResult}`);
       return firstResult;
     }
     
-    console.log("❌ No usable search results found");
+    console.log("❌ No usable Google search results found");
     return null;
   } catch (error) {
-    console.error("❌ Search error:", error);
+    console.error("❌ Google search error:", error);
     console.log("🔄 Trying fallback search method...");
     return await fallbackSearch(query);
   }

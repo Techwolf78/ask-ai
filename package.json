@@ -22,7 +22,6 @@
     "serpapi": "^2.0.0",
     "node-fetch": "^3.3.0",
     "jsdom": "^23.0.0",
-    "cheerio": "^1.0.0-rc.12",
-    "googlethis": "^1.7.0"
+    "cheerio": "^1.0.0-rc.12"
   }
 }
