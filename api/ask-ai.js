@@ -1,7 +1,7 @@
-import Together from 'together-ai';
+import Groq from "groq-sdk";
 
-const together = new Together({
-  apiKey: process.env.TOGETHER_API_KEY,
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY, // Add this to your Vercel environment variables
 });
 
 export default async function handler(req, res) {
@@ -26,16 +26,27 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing prompt' });
     }
 
-    const response = await together.chat.completions.create({
-      model: "Qwen/Qwen3-235B-A22B-Instruct-2507-tput",
-      messages: [{ role: 'user', content: prompt }],
+    // Enhanced prompt with current context
+    const currentDate = new Date().toLocaleDateString();
+    const enhancedPrompt = `Current date: ${currentDate}
+
+You are a helpful AI assistant. Provide accurate, helpful, and up-to-date information.
+If you don't have recent information about something, mention your knowledge cutoff.
+
+User question: ${prompt}`;
+
+    const response = await groq.chat.completions.create({
+      model: "llama-3.1-70b-versatile", // Most powerful free model
+      messages: [{ role: 'user', content: enhancedPrompt }],
+      max_tokens: 1000,
+      temperature: 0.7,
     });
 
     const reply = response.choices[0].message.content;
     return res.status(200).json({ response: reply });
 
   } catch (err) {
-    console.error("Together API Error:", err);
+    console.error("Groq API Error:", err);
     return res.status(500).json({ 
       error: err.message || 'Server error',
       stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
