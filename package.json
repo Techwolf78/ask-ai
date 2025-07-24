@@ -9,10 +9,11 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "dependencies": {
     "@vercel/node": "^5.3.6",
     "dotenv": "^17.2.0",
+    "groq-sdk": "^0.29.0",
     "openai": "^5.10.2",
     "together-ai": "^0.20.0"
   }
