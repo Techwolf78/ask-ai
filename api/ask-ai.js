@@ -12,6 +12,8 @@ const MODEL = "llama3-8b-8192"; // Using same model as your friend's Python code
 // Fetch top URL from Google search (same logic as Python version)
 async function fetchTopUrl(query) {
   try {
+    console.log(`🔍 Searching Google for: "${query}"`);
+    
     const options = {
       page: 0,
       safe: false,
@@ -24,48 +26,90 @@ async function fetchTopUrl(query) {
     const response = await googlethis.search(query, options);
     const results = response.results || [];
     
+    console.log(`📊 Found ${results.length} search results`);
+    
     // Priority domains (same as Python version)
     const priorityDomains = ["shiksha.com", "careers360.com", ".ac.in", ".edu.in", ".org", ".in", ".com"];
     
+    // First, try to find priority domains
     for (const result of results) {
       if (result.url && priorityDomains.some(domain => result.url.includes(domain))) {
+        console.log(`✅ Found priority domain: ${result.url}`);
         return result.url;
       }
     }
     
-    return results[0]?.url || null;
-  } catch (error) {
-    console.error("Search error:", error);
+    // If no priority domain found, return first valid result
+    const firstResult = results[0]?.url;
+    if (firstResult) {
+      console.log(`📝 Using first result: ${firstResult}`);
+      return firstResult;
+    }
+    
+    console.log("❌ No search results found");
     return null;
+  } catch (error) {
+    console.error("❌ Search error:", error);
+    return null;
+  }
+}
+
+// Check if input is a URL
+function isUrl(string) {
+  try {
+    new URL(string);
+    return true;
+  } catch (_) {
+    return false;
   }
 }
 
 // Scrape text (same logic as Python BeautifulSoup version)
 async function scrapeText(url) {
   try {
+    console.log(`🌐 Scraping: ${url}`);
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+    
     const response = await fetch(url, {
-      timeout: 10000,
+      signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
       }
     });
     
-    if (!response.ok) return null;
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      console.log(`❌ HTTP ${response.status}: ${response.statusText}`);
+      return null;
+    }
     
     const html = await response.text();
     const $ = cheerio.load(html);
     
     // Remove unwanted elements (same as Python version)
-    $('script, style, noscript').remove();
+    $('script, style, noscript, nav, footer, header, .ad, .advertisement').remove();
     
-    // Get text content (equivalent to soup.get_text())
-    const text = $('body').text()
+    // Try to get main content first, then fall back to body
+    let text = $('main').text() || $('article').text() || $('.content').text() || $('body').text();
+    
+    // Clean the text (equivalent to soup.get_text())
+    text = text
       .replace(/\s+/g, ' ')
+      .replace(/\n+/g, '\n')
       .trim();
     
+    if (text.length < 100) {
+      console.log("⚠️ Very little content found");
+      return null;
+    }
+    
+    console.log(`✅ Scraped ${text.length} characters`);
     return text;
   } catch (error) {
-    console.error("Scraping error:", error);
+    console.error("❌ Scraping error:", error);
     return null;
   }
 }
@@ -91,33 +135,60 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing prompt' });
     }
 
-    console.log("🔍 Searching and thinking...");
+    console.log("🔍 Processing request...");
     
-    const url = await fetchTopUrl(prompt);
+    let url = null;
     let context = "";
     let sourceUrl = null;
 
-    if (url) {
-      console.log(`🔗 Source: ${url}`);
+    // Check if the prompt is a URL - if so, scrape it directly
+    if (isUrl(prompt)) {
+      console.log("🔗 Direct URL detected, scraping directly...");
+      url = prompt;
       sourceUrl = url;
       const scraped = await scrapeText(url);
       
       if (scraped) {
-        context = scraped.substring(0, 3000); // Use only first 3000 chars (same as Python)
-        console.log("✅ Successfully scraped content");
+        context = scraped.substring(0, 3000);
+        console.log("✅ Successfully scraped direct URL");
       } else {
-        console.log("⚠️ Failed to scrape content");
+        console.log("❌ Failed to scrape direct URL");
       }
     } else {
-      console.log("⚠️ No reliable source found. Using only prompt.");
+      // Search for the topic first
+      console.log("🔍 Searching for topic...");
+      url = await fetchTopUrl(prompt);
+      
+      if (url) {
+        console.log(`🔗 Found source: ${url}`);
+        sourceUrl = url;
+        const scraped = await scrapeText(url);
+        
+        if (scraped) {
+          context = scraped.substring(0, 3000); // Use only first 3000 chars (same as Python)
+          console.log("✅ Successfully scraped search result");
+        } else {
+          console.log("⚠️ Failed to scrape search result");
+        }
+      } else {
+        console.log("⚠️ No reliable source found from search");
+      }
     }
 
     // Create prompt (same logic as Python version)
     let finalPrompt;
     if (context) {
-      finalPrompt = `Give a brief and accurate description of the following topic based on this info:\n${context}`;
+      if (isUrl(prompt)) {
+        finalPrompt = `Based on the content from the website ${sourceUrl}, provide a comprehensive description of this organization/institution:\n\n${context}`;
+      } else {
+        finalPrompt = `Give a brief and accurate description of the following topic based on this info:\n${context}`;
+      }
     } else {
-      finalPrompt = `Give a short and clear explanation about: ${prompt}`;
+      if (isUrl(prompt)) {
+        finalPrompt = `I couldn't access the website ${prompt}. Please provide a general explanation about what might be found on this domain or suggest how the user can access this information.`;
+      } else {
+        finalPrompt = `Give a short and clear explanation about: ${prompt}`;
+      }
     }
 
     // Call Groq API (same as Python version)
