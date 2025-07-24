@@ -24,9 +24,20 @@ async function fetchTopUrl(query) {
     };
     
     const response = await googlethis.search(query, options);
-    const results = response.results || [];
+    console.log("📊 Raw search response:", JSON.stringify(response, null, 2));
     
+    const results = response.results || [];
     console.log(`📊 Found ${results.length} search results`);
+    
+    if (results.length === 0) {
+      console.log("❌ No search results - trying fallback method");
+      return await fallbackSearch(query);
+    }
+    
+    // Log all found URLs for debugging
+    results.forEach((result, index) => {
+      console.log(`Result ${index + 1}: ${result.url || 'No URL'} - ${result.title || 'No title'}`);
+    });
     
     // Priority domains (same as Python version)
     const priorityDomains = ["shiksha.com", "careers360.com", ".ac.in", ".edu.in", ".org", ".in", ".com"];
@@ -46,10 +57,70 @@ async function fetchTopUrl(query) {
       return firstResult;
     }
     
-    console.log("❌ No search results found");
+    console.log("❌ No usable search results found");
     return null;
   } catch (error) {
     console.error("❌ Search error:", error);
+    console.log("🔄 Trying fallback search method...");
+    return await fallbackSearch(query);
+  }
+}
+
+// Fallback search using DuckDuckGo
+async function fallbackSearch(query) {
+  try {
+    console.log(`🦆 Fallback: Searching DuckDuckGo for: "${query}"`);
+    
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    const response = await fetch(searchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+    
+    if (!response.ok) {
+      console.log("❌ DuckDuckGo search failed");
+      return null;
+    }
+    
+    const html = await response.text();
+    const $ = cheerio.load(html);
+    
+    // Extract search results from DuckDuckGo
+    const results = [];
+    $('.result__url').each((i, elem) => {
+      if (i < 5) { // Get top 5 results
+        let url = $(elem).text().trim();
+        if (url && !url.startsWith('http')) {
+          url = 'https://' + url;
+        }
+        if (url.startsWith('http')) {
+          results.push(url);
+          console.log(`DuckDuckGo Result ${i + 1}: ${url}`);
+        }
+      }
+    });
+    
+    if (results.length === 0) {
+      console.log("❌ No DuckDuckGo results found");
+      return null;
+    }
+    
+    // Priority domains
+    const priorityDomains = ["shiksha.com", "careers360.com", ".ac.in", ".edu.in", ".org", ".in", ".com"];
+    
+    for (const url of results) {
+      if (priorityDomains.some(domain => url.includes(domain))) {
+        console.log(`✅ Found priority domain via DuckDuckGo: ${url}`);
+        return url;
+      }
+    }
+    
+    console.log(`📝 Using first DuckDuckGo result: ${results[0]}`);
+    return results[0];
+    
+  } catch (error) {
+    console.error("❌ Fallback search error:", error);
     return null;
   }
 }
@@ -157,7 +228,10 @@ export default async function handler(req, res) {
     } else {
       // Search for the topic first
       console.log("🔍 Searching for topic...");
+      console.log(`Query being searched: "${prompt}"`);
+      
       url = await fetchTopUrl(prompt);
+      console.log(`Search result URL: ${url}`);
       
       if (url) {
         console.log(`🔗 Found source: ${url}`);
@@ -167,6 +241,8 @@ export default async function handler(req, res) {
         if (scraped) {
           context = scraped.substring(0, 3000); // Use only first 3000 chars (same as Python)
           console.log("✅ Successfully scraped search result");
+          console.log(`Context length: ${context.length} characters`);
+          console.log(`Context preview: ${context.substring(0, 200)}...`);
         } else {
           console.log("⚠️ Failed to scrape search result");
         }
@@ -177,27 +253,51 @@ export default async function handler(req, res) {
 
     // Create prompt (same logic as Python version)
     let finalPrompt;
+    let systemMessage;
+    
     if (context) {
+      console.log("📝 Using scraped content for response");
+      
       if (isUrl(prompt)) {
-        finalPrompt = `Based on the content from the website ${sourceUrl}, provide a comprehensive description of this organization/institution:\n\n${context}`;
+        systemMessage = "You are an assistant that ONLY uses the provided website content. Do NOT use your training data. Base your response EXCLUSIVELY on the content provided below.";
+        finalPrompt = `IMPORTANT: Use ONLY the content from this website. Do NOT use your general knowledge about this organization.
+
+Website: ${sourceUrl}
+Content: ${context}
+
+Based EXCLUSIVELY on the above website content, provide a comprehensive description of this organization/institution. If the content doesn't contain enough information, say so clearly.`;
       } else {
-        finalPrompt = `Give a brief and accurate description of the following topic based on this info:\n${context}`;
+        systemMessage = "You are an assistant that ONLY uses the provided web search content. Do NOT use your training data. Base your response EXCLUSIVELY on the information provided below.";
+        finalPrompt = `IMPORTANT: Use ONLY the web search content provided below. Do NOT use your general knowledge.
+
+Topic: ${prompt}
+Web Content: ${context}
+
+Based EXCLUSIVELY on the above content, provide a brief and accurate description. If the content doesn't contain enough information about the topic, say so clearly and mention what information is missing.`;
       }
     } else {
+      console.log("⚠️ No scraped content - using general knowledge");
+      
       if (isUrl(prompt)) {
+        systemMessage = "You are a helpful assistant.";
         finalPrompt = `I couldn't access the website ${prompt}. Please provide a general explanation about what might be found on this domain or suggest how the user can access this information.`;
       } else {
+        systemMessage = "You are a helpful assistant.";
         finalPrompt = `Give a short and clear explanation about: ${prompt}`;
       }
     }
 
     // Call Groq API (same as Python version)
+    console.log("🤖 Calling Groq API...");
+    console.log(`System message: ${systemMessage}`);
+    console.log(`Final prompt preview: ${finalPrompt.substring(0, 300)}...`);
+    
     const response = await groq.chat.completions.create({
       model: MODEL,
       messages: [
         {
           role: "system",
-          content: "You are a helpful assistant that gives brief and accurate descriptions of topics or institutions."
+          content: systemMessage
         },
         {
           role: "user",
@@ -208,15 +308,26 @@ export default async function handler(req, res) {
     });
 
     const reply = response.choices[0].message.content;
+    console.log(`✅ Got AI response: ${reply.length} characters`);
+    
+    // Add debug info to response
+    let debugInfo = "";
+    if (context) {
+      debugInfo = `\n\n📊 Debug Info: Used ${context.length} characters of scraped content from web search.`;
+    } else {
+      debugInfo = `\n\n📊 Debug Info: No web content found - used general AI knowledge.`;
+    }
     
     // Add source if available
     const finalResponse = sourceUrl ? 
-      `${reply}\n\n🔗 Source: ${sourceUrl}` : 
-      reply;
+      `${reply}\n\n🔗 Source: ${sourceUrl}${debugInfo}` : 
+      `${reply}${debugInfo}`;
 
     return res.status(200).json({ 
       response: finalResponse,
-      sourceUrl: sourceUrl 
+      sourceUrl: sourceUrl,
+      hasScrapedContent: !!context,
+      scrapedContentLength: context ? context.length : 0
     });
 
   } catch (err) {
