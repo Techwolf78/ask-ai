@@ -1,10 +1,10 @@
-const { Groq } = require("groq-sdk");
+import Together from "together-ai";
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY, // Add this to your Vercel environment variables
+const together = new Together({
+  apiKey: process.env.TOGETHER_API_KEY, // Add this to your Vercel environment variables
 });
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   // Add CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -35,8 +35,8 @@ If you don't have recent information about something, mention your knowledge cut
 
 User question: ${prompt}`;
 
-    const response = await groq.chat.completions.create({
-      model: "llama-3.1-70b-versatile", // Most powerful free model
+    const response = await together.chat.completions.create({
+      model: "meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo", // High-quality model
       messages: [{ role: 'user', content: enhancedPrompt }],
       max_tokens: 1000,
       temperature: 0.7,
@@ -46,10 +46,10 @@ User question: ${prompt}`;
     return res.status(200).json({ response: reply });
 
   } catch (err) {
-    console.error("Groq API Error:", err);
+    console.error("Together AI API Error:", err);
     return res.status(500).json({ 
       error: err.message || 'Server error',
       stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
   }
-};
+}
