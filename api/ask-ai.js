@@ -36,7 +36,7 @@ If you don't have recent information about something, mention your knowledge cut
 User question: ${prompt}`;
 
     const response = await groq.chat.completions.create({
-      model: "llama3-70b-8192", // Updated supported Groq model
+      model: "deepseek-r1-distill-llama-70b", // Latest DeepSeek R1 reasoning model with 2024 training data
       messages: [{ role: 'user', content: enhancedPrompt }],
       max_tokens: 1000,
       temperature: 0.7,
