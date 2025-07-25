@@ -2,20 +2,55 @@ import Groq from "groq-sdk";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
-// Commented out AI model - using only web scraping
-// const groq = new Groq({
-//   apiKey: process.env.GROQ_API_KEY,
-// });
-// const MODEL = "llama3-8b-8192";
+// Re-enable AI model for content summarization
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
+});
+const MODEL = "llama3-8b-8192";
 
-// Direct Google search scraping (like Python's googlesearch)
-async function fetchTopUrl(query) {
+// Enhanced search with multiple result attempts
+async function searchAndScrapeRelevantContent(query, maxAttempts = 3) {
   try {
-    console.log(`🔍 Searching Google for: "${query}"`);
+    console.log(`🔍 Searching for relevant content: "${query}"`);
     
-    // Use Google search URL directly (like your friend's Python googlesearch)
+    // Get search results
+    const searchResults = await getMultipleSearchResults(query);
+    
+    if (!searchResults || searchResults.length === 0) {
+      console.log("❌ No search results found");
+      return { content: null, sourceUrl: null };
+    }
+    
+    // Try scraping multiple results until we find relevant content
+    for (let i = 0; i < Math.min(searchResults.length, maxAttempts); i++) {
+      const url = searchResults[i];
+      console.log(`🌐 Attempting to scrape result ${i + 1}: ${url}`);
+      
+      const scraped = await scrapeText(url);
+      if (scraped && isRelevantContent(scraped, query)) {
+        console.log(`✅ Found relevant content from result ${i + 1}`);
+        return { content: scraped, sourceUrl: url };
+      } else if (scraped) {
+        console.log(`⚠️ Content from result ${i + 1} not relevant, trying next...`);
+      } else {
+        console.log(`❌ Failed to scrape result ${i + 1}, trying next...`);
+      }
+    }
+    
+    console.log("❌ No relevant content found from search results");
+    return { content: null, sourceUrl: null };
+  } catch (error) {
+    console.error("❌ Search and scrape error:", error);
+    return { content: null, sourceUrl: null };
+  }
+}
+
+// Get multiple search results instead of just the first one
+async function getMultipleSearchResults(query) {
+  try {
+    console.log(`🔍 Getting multiple search results for: "${query}"`);
+    
     const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=10`;
-    console.log(`🔗 Search URL: ${searchUrl}`);
     
     const response = await fetch(searchUrl, {
       headers: {
@@ -23,87 +58,85 @@ async function fetchTopUrl(query) {
       }
     });
     
-    console.log(`📊 Google response status: ${response.status}`);
-    
     if (!response.ok) {
       console.log("❌ Google search failed, trying fallback");
-      return await fallbackSearch(query);
+      return await getFallbackSearchResults(query);
     }
     
     const html = await response.text();
-    console.log(`📄 HTML length: ${html.length} characters`);
-    console.log(`📄 HTML preview: ${html.substring(0, 500)}...`);
-    
     const $ = cheerio.load(html);
     
-    // Extract search results from Google (try multiple selectors)
     const results = [];
-    
-    // Try different Google selectors
     const selectors = [
       'div.g a[href^="http"]',
-      '.g a[href^="http"]',
+      '.g a[href^="http"]', 
       'h3 a[href^="http"]',
       'a[href^="http"]:not([href*="google.com"])',
       '.yuRUbf a[href^="http"]'
     ];
     
     for (const selector of selectors) {
-      console.log(`🔍 Trying selector: ${selector}`);
-      
       $(selector).each((i, elem) => {
-        if (i < 10) { // Get top 10 results
+        if (results.length < 5) { // Get top 5 results
           const url = $(elem).attr('href');
-          const title = $(elem).text() || $(elem).find('h3').text() || 'No title';
-          
           if (url && !url.includes('google.com') && !url.includes('youtube.com')) {
-            results.push({ url, title });
-            console.log(`Google Result ${results.length}: ${url} - ${title}`);
+            results.push(url);
+            console.log(`Search Result ${results.length}: ${url}`);
           }
         }
       });
       
-      if (results.length > 0) {
-        console.log(`✅ Found ${results.length} results with selector: ${selector}`);
-        break;
-      }
+      if (results.length > 0) break;
     }
-    
-    console.log(`📊 Total found ${results.length} Google search results`);
     
     if (results.length === 0) {
-      console.log("❌ No Google results - trying fallback method");
-      // Let's save the HTML for debugging
-      console.log(`🐛 Saving Google HTML for debugging (first 1000 chars):`);
-      console.log(html.substring(0, 1000));
-      return await fallbackSearch(query);
+      return await getFallbackSearchResults(query);
     }
     
-    // Priority domains (same as Python version)
-    const priorityDomains = ["shiksha.com", "careers360.com", ".ac.in", ".edu.in", ".org", ".in", ".com"];
+    // Sort by priority domains
+    const priorityDomains = [
+      ".ac.in", ".edu.in", ".edu", ".gov.in", 
+      "careers360.com", "shiksha.com", "collegedunia.com",
+      "wikipedia.org", "iitb.ac.in", "naac.gov.in"
+    ];
     
-    // First, try to find priority domains
-    for (const result of results) {
-      if (result.url && priorityDomains.some(domain => result.url.includes(domain))) {
-        console.log(`✅ Found priority domain: ${result.url}`);
-        return result.url;
+    const priorityResults = [];
+    const regularResults = [];
+    
+    for (const url of results) {
+      if (priorityDomains.some(domain => url.includes(domain))) {
+        priorityResults.push(url);
+      } else {
+        regularResults.push(url);
       }
     }
     
-    // If no priority domain found, return first valid result
-    const firstResult = results[0]?.url;
-    if (firstResult) {
-      console.log(`📝 Using first Google result: ${firstResult}`);
-      return firstResult;
-    }
-    
-    console.log("❌ No usable Google search results found");
-    return null;
+    return [...priorityResults, ...regularResults];
   } catch (error) {
-    console.error("❌ Google search error:", error);
-    console.log("🔄 Trying fallback search method...");
-    return await fallbackSearch(query);
+    console.error("❌ Multiple search results error:", error);
+    return await getFallbackSearchResults(query);
   }
+}
+
+// Fallback search results
+async function getFallbackSearchResults(query) {
+  // Try known educational URLs first
+  if (query.toLowerCase().includes('iit bombay') || query.toLowerCase().includes('iit mumbai')) {
+    return [
+      'https://www.iitb.ac.in/',
+      'https://en.wikipedia.org/wiki/IIT_Bombay',
+      'https://www.careers360.com/university/indian-institute-of-technology-iit-bombay-mumbai'
+    ];
+  }
+  
+  if (query.toLowerCase().includes('naac')) {
+    return [
+      'https://www.naac.gov.in/',
+      'https://en.wikipedia.org/wiki/National_Assessment_and_Accreditation_Council'
+    ];
+  }
+  
+  return [];
 }
 
 // Fallback search using multiple approaches
@@ -227,7 +260,11 @@ async function tryDuckDuckGoSearch(query) {
     }
     
     // Priority domains
-    const priorityDomains = ["shiksha.com", "careers360.com", ".ac.in", ".edu.in", ".org", ".in", ".com"];
+    const priorityDomains = [
+      ".ac.in", ".edu.in", ".edu", ".gov.in", 
+      "careers360.com", "shiksha.com", "collegedunia.com",
+      "wikipedia.org", "iitb.ac.in", "naac.gov.in"
+    ];
     
     for (const url of results) {
       if (priorityDomains.some(domain => url.includes(domain))) {
@@ -328,27 +365,66 @@ async function scrapeText(url) {
   }
 }
 
-// Format scraped content for presentation
-function formatScrapedContent(content, sourceUrl, prompt) {
-  // Clean and structure the content
-  let formattedContent = content
-    .substring(0, 2000) // Limit to 2000 chars for readability
-    .replace(/\s+/g, ' ')
-    .trim();
+// Enhanced content validation
+function isRelevantContent(content, query) {
+  const queryWords = query.toLowerCase().split(' ');
+  const contentLower = content.toLowerCase();
   
-  // Add basic formatting
-  const response = `📝 **Web Search Results for: "${prompt}"**
+  // Check if content contains at least 30% of query words
+  const matchingWords = queryWords.filter(word => 
+    word.length > 2 && contentLower.includes(word)
+  );
+  
+  const relevanceScore = matchingWords.length / queryWords.length;
+  console.log(`🎯 Relevance score: ${relevanceScore} (${matchingWords.length}/${queryWords.length})`);
+  
+  return relevanceScore >= 0.3; // At least 30% relevance
+}
 
-${formattedContent}
+// AI-powered content summarization
+async function summarizeContent(content, prompt, sourceUrl) {
+  try {
+    console.log("🤖 Processing content with AI...");
+    
+    const completion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: "system",
+          content: `You are a helpful AI assistant that summarizes web content accurately and concisely. 
+          Focus on providing factual information related to the user's query. 
+          Structure your response clearly with key points.
+          If the content is not relevant to the query, say so clearly.`
+        },
+        {
+          role: "user",
+          content: `Please summarize this web content for the query: "${prompt}"
 
----
-🔗 **Source**: ${sourceUrl}
-📊 **Content Length**: ${content.length} characters
-⏰ **Scraped on**: ${new Date().toLocaleString()}
+Web Content:
+${content.substring(0, 4000)}
 
-Note: This is raw web content without AI processing for maximum accuracy.`;
+Source: ${sourceUrl}
 
-  return response;
+Provide a clear, structured summary focusing on information relevant to the query.`
+        }
+      ],
+      model: MODEL,
+      temperature: 0.3,
+      max_tokens: 1000,
+    });
+
+    const summary = completion.choices[0]?.message?.content;
+    
+    if (summary) {
+      console.log("✅ AI summarization successful");
+      return summary;
+    } else {
+      console.log("⚠️ AI returned empty response");
+      return null;
+    }
+  } catch (error) {
+    console.error("❌ AI summarization error:", error);
+    return null;
+  }
 }
 
 export default async function handler(req, res) {
@@ -388,6 +464,12 @@ export default async function handler(req, res) {
       if (scraped) {
         context = scraped;
         console.log("✅ Successfully scraped direct URL");
+        
+        // Check relevance for direct URLs too
+        if (!isRelevantContent(context, prompt)) {
+          console.log("⚠️ Direct URL content may not be fully relevant to query");
+          // Continue anyway since user provided specific URL
+        }
       } else {
         console.log("❌ Failed to scrape direct URL");
         return res.status(200).json({
@@ -398,34 +480,26 @@ export default async function handler(req, res) {
         });
       }
     } else {
-      // Search for the topic first
+      // Search for the topic and get relevant content
       console.log("🔍 Searching for topic...");
       console.log(`Query being searched: "${prompt}"`);
       
-      url = await fetchTopUrl(prompt);
-      console.log(`Search result URL: ${url}`);
+      const searchResult = await searchAndScrapeRelevantContent(prompt);
       
-      if (url) {
-        console.log(`🔗 Found source: ${url}`);
-        sourceUrl = url;
-        const scraped = await scrapeText(url);
-        
-        if (scraped) {
-          context = scraped;
-          console.log("✅ Successfully scraped search result");
-          console.log(`Context length: ${context.length} characters`);
-          console.log(`Context preview: ${context.substring(0, 200)}...`);
-        } else {
-          console.log("⚠️ Failed to scrape search result");
-        }
+      if (searchResult.content) {
+        context = searchResult.content;
+        sourceUrl = searchResult.sourceUrl;
+        console.log("✅ Successfully found relevant content");
+        console.log(`Context length: ${context.length} characters`);
+        console.log(`Source: ${sourceUrl}`);
       } else {
-        console.log("⚠️ No reliable source found from search");
+        console.log("⚠️ No relevant content found from search");
       }
       
       // If no content found from search, return helpful message
       if (!context) {
         return res.status(200).json({
-          response: `❌ No reliable web sources found for: "${prompt}"\n\nSuggestions:\n- Try more specific search terms\n- Check spelling\n- Use official website URLs directly\n\nExample: Instead of "KL University NAAC", try "KL University NAAC accreditation status"`,
+          response: `❌ No reliable web sources found for: "${prompt}"\n\nSuggestions:\n- Try more specific search terms\n- Check spelling\n- Use official website URLs directly\n\nExample: Instead of "NAAC accreditation IIT Bombay", try "IIT Bombay NAAC grade rating official"`,
           sourceUrl: null,
           hasScrapedContent: false,
           scrapedContentLength: 0
@@ -433,15 +507,48 @@ export default async function handler(req, res) {
       }
     }
 
-    // Format and return scraped content (NO AI PROCESSING)
-    console.log("📝 Formatting scraped content for response");
-    const formattedResponse = formatScrapedContent(context, sourceUrl, prompt);
+    // Process scraped content with AI summarization
+    console.log("🤖 Processing content with AI...");
+    const aiSummary = await summarizeContent(context, prompt, sourceUrl);
+    
+    let finalResponse;
+    if (aiSummary) {
+      finalResponse = `🤖 **AI Summary for: "${prompt}"**
+
+${aiSummary}
+
+---
+🔗 **Source**: ${sourceUrl}
+� **Original Content Length**: ${context.length} characters
+⏰ **Processed on**: ${new Date().toLocaleString()}
+
+Note: This summary is generated by AI from scraped web content.`;
+    } else {
+      // Fallback to formatted raw content if AI fails
+      console.log("⚠️ AI processing failed, using formatted raw content");
+      const formattedContent = context
+        .substring(0, 2000)
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      finalResponse = `📝 **Web Search Results for: "${prompt}"**
+
+${formattedContent}
+
+---
+🔗 **Source**: ${sourceUrl}
+📊 **Content Length**: ${context.length} characters
+⏰ **Scraped on**: ${new Date().toLocaleString()}
+
+Note: This is raw web content (AI processing unavailable).`;
+    }
 
     return res.status(200).json({ 
-      response: formattedResponse,
+      response: finalResponse,
       sourceUrl: sourceUrl,
       hasScrapedContent: true,
-      scrapedContentLength: context.length
+      scrapedContentLength: context.length,
+      aiProcessed: !!aiSummary
     });
 
   } catch (err) {
