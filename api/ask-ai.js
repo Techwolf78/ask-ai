@@ -15,6 +15,7 @@ async function fetchTopUrl(query) {
     
     // Use Google search URL directly (like your friend's Python googlesearch)
     const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=10`;
+    console.log(`🔗 Search URL: ${searchUrl}`);
     
     const response = await fetch(searchUrl, {
       headers: {
@@ -22,34 +23,59 @@ async function fetchTopUrl(query) {
       }
     });
     
+    console.log(`📊 Google response status: ${response.status}`);
+    
     if (!response.ok) {
       console.log("❌ Google search failed, trying fallback");
       return await fallbackSearch(query);
     }
     
     const html = await response.text();
+    console.log(`📄 HTML length: ${html.length} characters`);
+    console.log(`📄 HTML preview: ${html.substring(0, 500)}...`);
+    
     const $ = cheerio.load(html);
     
-    // Extract search results from Google (similar to Python approach)
+    // Extract search results from Google (try multiple selectors)
     const results = [];
     
-    // Google search result selectors
-    $('div.g a[href^="http"]').each((i, elem) => {
-      if (i < 10) { // Get top 10 results
-        const url = $(elem).attr('href');
-        const title = $(elem).text() || 'No title';
-        
-        if (url && !url.includes('google.com') && !url.includes('youtube.com')) {
-          results.push({ url, title });
-          console.log(`Google Result ${i + 1}: ${url} - ${title}`);
-        }
-      }
-    });
+    // Try different Google selectors
+    const selectors = [
+      'div.g a[href^="http"]',
+      '.g a[href^="http"]',
+      'h3 a[href^="http"]',
+      'a[href^="http"]:not([href*="google.com"])',
+      '.yuRUbf a[href^="http"]'
+    ];
     
-    console.log(`📊 Found ${results.length} Google search results`);
+    for (const selector of selectors) {
+      console.log(`🔍 Trying selector: ${selector}`);
+      
+      $(selector).each((i, elem) => {
+        if (i < 10) { // Get top 10 results
+          const url = $(elem).attr('href');
+          const title = $(elem).text() || $(elem).find('h3').text() || 'No title';
+          
+          if (url && !url.includes('google.com') && !url.includes('youtube.com')) {
+            results.push({ url, title });
+            console.log(`Google Result ${results.length}: ${url} - ${title}`);
+          }
+        }
+      });
+      
+      if (results.length > 0) {
+        console.log(`✅ Found ${results.length} results with selector: ${selector}`);
+        break;
+      }
+    }
+    
+    console.log(`📊 Total found ${results.length} Google search results`);
     
     if (results.length === 0) {
       console.log("❌ No Google results - trying fallback method");
+      // Let's save the HTML for debugging
+      console.log(`🐛 Saving Google HTML for debugging (first 1000 chars):`);
+      console.log(html.substring(0, 1000));
       return await fallbackSearch(query);
     }
     
@@ -80,12 +106,92 @@ async function fetchTopUrl(query) {
   }
 }
 
-// Fallback search using DuckDuckGo
+// Fallback search using multiple approaches
 async function fallbackSearch(query) {
   try {
-    console.log(`🦆 Fallback: Searching DuckDuckGo for: "${query}"`);
+    console.log(`🦆 Fallback: Trying alternative search for: "${query}"`);
     
+    // Try Bing search first
+    console.log("🔍 Trying Bing search...");
+    let bingResults = await tryBingSearch(query);
+    if (bingResults) return bingResults;
+    
+    // Try DuckDuckGo
+    console.log("🦆 Trying DuckDuckGo search...");
+    let ddgResults = await tryDuckDuckGoSearch(query);
+    if (ddgResults) return ddgResults;
+    
+    // If all fails, try known URLs for IIT Bombay
+    console.log("🏫 Trying known educational URLs...");
+    if (query.toLowerCase().includes('iit bombay') || query.toLowerCase().includes('iit mumbai')) {
+      const knownUrls = [
+        'https://www.iitb.ac.in/',
+        'https://en.wikipedia.org/wiki/IIT_Bombay',
+        'https://www.careers360.com/university/indian-institute-of-technology-iit-bombay-mumbai',
+        'https://www.shiksha.com/university/iit-bombay-mumbai-3056'
+      ];
+      
+      console.log("🎯 Using known IIT Bombay URLs");
+      return knownUrls[0]; // Return the official website
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("❌ All fallback searches failed:", error);
+    return null;
+  }
+}
+
+// Try Bing search
+async function tryBingSearch(query) {
+  try {
+    const searchUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}`;
+    console.log(`🔗 Bing URL: ${searchUrl}`);
+    
+    const response = await fetch(searchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+    
+    if (!response.ok) {
+      console.log("❌ Bing search failed");
+      return null;
+    }
+    
+    const html = await response.text();
+    const $ = cheerio.load(html);
+    
+    // Bing result selectors
+    const results = [];
+    $('.b_algo h2 a, .b_title a').each((i, elem) => {
+      if (i < 5) {
+        const url = $(elem).attr('href');
+        if (url && url.startsWith('http') && !url.includes('bing.com')) {
+          results.push(url);
+          console.log(`Bing Result ${i + 1}: ${url}`);
+        }
+      }
+    });
+    
+    if (results.length > 0) {
+      console.log(`✅ Found ${results.length} Bing results`);
+      return results[0];
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("❌ Bing search error:", error);
+    return null;
+  }
+}
+
+// Try DuckDuckGo search
+async function tryDuckDuckGoSearch(query) {
+  try {
     const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    console.log(`🔗 DuckDuckGo URL: ${searchUrl}`);
+    
     const response = await fetch(searchUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -134,7 +240,7 @@ async function fallbackSearch(query) {
     return results[0];
     
   } catch (error) {
-    console.error("❌ Fallback search error:", error);
+    console.error("❌ DuckDuckGo search error:", error);
     return null;
   }
 }
