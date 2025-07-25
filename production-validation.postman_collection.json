@@ -1,0 +1,113 @@
+{
+  "info": {
+    "name": "Ask AI API - Production Tests",
+    "description": "Validate API functionality before production deployment",
+    "_postman_id": "production-validation",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check - Simple Query",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"prompt\": \"IIT Delhi\"\n}"
+        },
+        "url": {
+          "raw": "{{API_URL}}/api/ask-ai",
+          "host": ["{{API_URL}}"],
+          "path": ["api", "ask-ai"]
+        }
+      }
+    },
+    {
+      "name": "Sales Query - College Placement Stats",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"prompt\": \"college placement statistics 2024 engineering\"\n}"
+        },
+        "url": {
+          "raw": "{{API_URL}}/api/ask-ai",
+          "host": ["{{API_URL}}"],
+          "path": ["api", "ask-ai"]
+        }
+      }
+    },
+    {
+      "name": "Current Data - 2025 Admissions",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"prompt\": \"engineering admissions 2025 India application deadlines\"\n}"
+        },
+        "url": {
+          "raw": "{{API_URL}}/api/ask-ai",
+          "host": ["{{API_URL}}"],
+          "path": ["api", "ask-ai"]
+        }
+      }
+    },
+    {
+      "name": "Direct URL Test",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"prompt\": \"https://en.wikipedia.org/wiki/IIT_Delhi\"\n}"
+        },
+        "url": {
+          "raw": "{{API_URL}}/api/ask-ai",
+          "host": ["{{API_URL}}"],
+          "path": ["api", "ask-ai"]
+        }
+      }
+    },
+    {
+      "name": "CORS Test - OPTIONS",
+      "request": {
+        "method": "OPTIONS",
+        "header": [],
+        "url": {
+          "raw": "{{API_URL}}/api/ask-ai",
+          "host": ["{{API_URL}}"],
+          "path": ["api", "ask-ai"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "API_URL",
+      "value": "https://your-domain.vercel.app",
+      "description": "Production API URL"
+    }
+  ]
+}
