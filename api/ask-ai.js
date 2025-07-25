@@ -2,11 +2,11 @@ import Groq from "groq-sdk";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
-// Commented out AI model - using only web scraping
-// const groq = new Groq({
-//   apiKey: process.env.GROQ_API_KEY,
-// });
-// const MODEL = "llama3-8b-8192";
+// AI model for summarizing scraped content
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
+});
+const MODEL = "llama3-8b-8192";
 
 // Direct Google search scraping (like Python's googlesearch)
 async function fetchTopUrl(query) {
@@ -328,9 +328,66 @@ async function scrapeText(url) {
   }
 }
 
+// AI summarization function
+async function summarizeWithAI(content, query) {
+  try {
+    console.log("🤖 Starting AI summarization...");
+    
+    const prompt = `You are a helpful assistant that summarizes web content based on user queries.
+
+User Query: "${query}"
+
+Scraped Content:
+${content.substring(0, 4000)} ${content.length > 4000 ? '...(content truncated)' : ''}
+
+Please provide a clear, comprehensive summary that directly answers the user's query. Include:
+1. Key facts and information relevant to the query
+2. Important details from the content
+3. Any statistics, dates, or specific data mentioned
+4. A conclusion or key takeaway
+
+Format your response in a clear, readable manner with proper headings and bullet points where appropriate.`;
+
+    const completion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      model: MODEL,
+      temperature: 0.3,
+      max_tokens: 1500,
+    });
+
+    const summary = completion.choices[0]?.message?.content;
+    console.log("✅ AI summarization completed");
+    return summary;
+  } catch (error) {
+    console.error("❌ AI summarization error:", error);
+    return null;
+  }
+}
+
+// Format AI-summarized content for presentation
+function formatAISummary(summary, rawContent, sourceUrl, prompt) {
+  const response = `🤖 **AI Summary for: "${prompt}"**
+
+${summary}
+
+---
+📊 **Source Information**
+🔗 **URL**: ${sourceUrl}
+📝 **Original Content Length**: ${rawContent.length} characters
+⏰ **Processed on**: ${new Date().toLocaleString()}
+
+*Note: This summary is AI-generated from scraped web content. For complete details, please visit the source URL.*`;
+
+  return response;
+}
+
 // Format scraped content for presentation
 function formatScrapedContent(content, sourceUrl, prompt) {
-  // Clean and structure the content
   let formattedContent = content
     .substring(0, 2000) // Limit to 2000 chars for readability
     .replace(/\s+/g, ' ')
@@ -433,15 +490,25 @@ export default async function handler(req, res) {
       }
     }
 
-    // Format and return scraped content (NO AI PROCESSING)
-    console.log("📝 Formatting scraped content for response");
-    const formattedResponse = formatScrapedContent(context, sourceUrl, prompt);
+    // AI summarization of scraped content
+    console.log("🤖 Starting AI summarization of scraped content");
+    const aiSummary = await summarizeWithAI(context, prompt);
+    
+    let formattedResponse;
+    if (aiSummary) {
+      console.log("✅ AI summarization successful");
+      formattedResponse = formatAISummary(aiSummary, context, sourceUrl, prompt);
+    } else {
+      console.log("⚠️ AI summarization failed, falling back to raw content");
+      formattedResponse = formatScrapedContent(context, sourceUrl, prompt);
+    }
 
     return res.status(200).json({ 
       response: formattedResponse,
       sourceUrl: sourceUrl,
       hasScrapedContent: true,
-      scrapedContentLength: context.length
+      scrapedContentLength: context.length,
+      aiSummarized: aiSummary ? true : false
     });
 
   } catch (err) {
